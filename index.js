@@ -12,23 +12,22 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-app.use(
-  "/paystack/webhook",
-  express.raw({ type: "application/json" })
-);
-
 // Supabase client with Service Role key
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
+const supabaseAdmin = supabase; // ✅ Admin client
 
 // OpenAI client
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_key
 });
 
-
+app.get('/', (req,res)=>{
+  console.log("backend working")
+  res.send({message:"backend working"})
+})
 // Helper to fetch single row from Supabase
 async function fetchSingle(table, userId) {
   const { data } = await supabase
@@ -40,14 +39,119 @@ async function fetchSingle(table, userId) {
 }
 
 // ========================
-// /ai/chat
+// Supabase token verification middleware
+// ========================
+const verifySupabaseToken = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  
+
+  if (!authHeader?.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "Missing token" })
+    console.log("missing token")
+  }
+
+  const token = authHeader.replace("Bearer ", "");
+
+  const { data, error } = await supabaseAdmin.auth.getUser(token);
+
+  if (error || !data?.user) {
+    return res.status(401).json({ error: "Invalid or expired token" });
+    console.log("invalid or expired token")
+  }
+
+  req.user = data.user;
+  next();
+};
+
+// ========================
+// User sync route
+// ========================
+app.post("/api/user/sync", verifySupabaseToken, async (req, res) => {
+  try {
+    const user = req.user;
+
+    const auth_id = user.id;
+    const email = user.email;
+    
+    // 1️⃣ Upsert user
+    const { error: userError } = await supabaseAdmin
+      .from("users")
+      .upsert({
+        id: auth_id,
+        email,
+        
+      });
+
+    if (userError) {
+      console.error(userError);
+      return res.status(500).json({ message: "User sync failed" });
+    }
+
+    // 2️⃣ Check subscription
+    const { data: existingSub, error: subCheckError } =
+      await supabaseAdmin
+        .from("subscriptions")
+        .select("*")
+        .eq("user_id", auth_id)
+        .maybeSingle();
+
+    if (subCheckError) {
+      console.error(subCheckError);
+      return res.status(500).json({ message: "Subscription check failed" });
+    }
+
+    // 3️⃣ Create FREE plan if none exists
+    let subscription = existingSub;
+
+    if (!existingSub) {
+      const { data: newSub, error: subCreateError } =
+        await supabaseAdmin
+          .from("subscriptions")
+          .insert({
+            user_id: auth_id,
+            plan: "free",
+            status: "active",
+            expires_at: null,
+          })
+          .select()
+          .single();
+
+      if (subCreateError) {
+        console.error(subCreateError);
+        return res.status(500).json({ message: "Subscription creation failed" });
+      }
+
+      subscription = newSub;
+      
+    }
+
+    // 4️⃣ Final response
+    res.status(200).json({
+      success: true,
+      user: {
+        id: auth_id,
+        email,
+      
+      },
+      subscription,
+    });
+console.log(subscription)
+    console.log("✅ User synced & subscription ensured");
+  } catch (err) {
+    console.error(err);
+    res.status(401).json({ error: "Unauthorized" });
+  }
+});
+
+// ========================
+// AI chat route
 // ========================
 app.post("/ai/chat", async (req, res) => {
   try {
     const { userId, message } = req.body;
     if (!userId || !message) return res.status(400).json({ error: "userId and message required" });
 
-    // 1️⃣ Fetch user data
+    // Fetch user data
     const [brand, audience, rules] = await Promise.all([
       fetchSingle("brandProfiles", userId),
       fetchSingle("audienceProfiles", userId),
@@ -62,7 +166,6 @@ app.post("/ai/chat", async (req, res) => {
       .order("created_at", { ascending: false })
       .limit(8);
 
-    // 2️⃣ Build system prompt for OpenAI
     const systemPrompt = `
 You are an AI assistant representing this brand.
 
@@ -87,7 +190,6 @@ Never use banned words:
 ${(rules?.bannedWords || []).map(w => `- ${w}`).join("\n")}
 `;
 
-    // 3️⃣ Call OpenAI
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
@@ -96,25 +198,23 @@ ${(rules?.bannedWords || []).map(w => `- ${w}`).join("\n")}
       ]
     });
 
-    const reply = completion.choices[0].message.content;
+    const reply = completion.choices[0]?.message?.content || "";
 
-    // 4️⃣ Save AI reply as a post in Supabase
+    // Save AI reply
     const { data: post } = await supabase
       .from("posts")
       .insert({ user_id: userId, content: reply })
       .select()
       .single();
 
-    // 5️⃣ Summarize post for memory
+    // Summarize memory
     const summaryCompletion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0,
-      messages: [
-        { role: "user", content: `Summarize this post into short AI memory:\n${reply}` }
-      ]
+      messages: [{ role: "user", content: `Summarize this post into short AI memory:\n${reply}` }]
     });
 
-    const memorySummary = summaryCompletion.choices[0].message.content.trim();
+    const memorySummary = summaryCompletion.choices[0]?.message?.content.trim() || "";
 
     await supabase.from("memorySummaries").insert({
       user_id: userId,
@@ -122,237 +222,107 @@ ${(rules?.bannedWords || []).map(w => `- ${w}`).join("\n")}
       summary: memorySummary
     });
 
-    // 6️⃣ Return results
     res.json({ reply, post, memorySummary });
   } catch (err) {
-    console.error(err);
+    console.error("AI chat error:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
 // ========================
-// /generateAndSavePost (optional)
+// Verify payment
 // ========================
-app.post("/generateAndSavePost", async (req, res) => {
-  try {
-    const { userId, idea } = req.body;
-    if (!userId || !idea) return res.status(400).json({ error: "userId and idea required" });
-
-    const brand = await fetchSingle("brandProfiles", userId);
-    const audience = await fetchSingle("audienceProfiles", userId);
-
-    // Get last memory
-    const { data: lastMemory } = await supabase
-      .from("memorySummaries")
-      .select("summary")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    const systemPrompt = `
-Brand: ${brand?.name}
-Tone: ${brand?.tone}
-Audience: ${audience?.targetAudience}
-
-Previous Memory:
-${lastMemory?.summary || "None"}
-
-Task: Generate a social media post for "${idea}"
-`;
-
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 0.3,
-      max_tokens: 400,
-      messages: [{ role: "system", content: systemPrompt }]
-    });
-
-    const newPost = completion.choices[0].message.content.trim();
-
-    const { data: post } = await supabase
-      .from("posts")
-      .insert({ user_id: userId, content: newPost })
-      .select()
-      .single();
-
-    const summaryCompletion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 0,
-      messages: [
-        { role: "user", content: `Summarize this post into short AI memory:\n${newPost}` }
-      ]
-    });
-
-    const memorySummary = summaryCompletion.choices[0].message.content.trim();
-
-    await supabase.from("memorySummaries").insert({
-      user_id: userId,
-      post_id: post.id,
-      summary: memorySummary
-    });
-
-    res.json({ success: true, newPost, memorySummary });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// verify payment
-// CALLBACK: called from frontend after Paystack success
 app.post("/verify-payment", async (req, res) => {
   const { reference } = req.body;
-
-  if (!reference) {
-    return res.status(400).json({ error: "Transaction reference required" });
-  }
+  if (!reference) return res.status(400).json({ error: "Transaction reference required" });
 
   try {
-    // Verify transaction with Paystack
-    const verifyRes = await fetch(
-      `https://api.paystack.co/transaction/verify/${reference}`,
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
-        },
-      }
-    );
-
+    const verifyRes = await fetch(`https://api.paystack.co/transaction/verify/${reference}`, {
+      headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` },
+    });
     const result = await verifyRes.json();
 
     if (!result.status || result.data.status !== "success") {
-      return res.status(400).json({
-        success: false,
-        message: "Payment verification failed",
-      });
+      return res.status(400).json({ success: false, message: "Payment verification failed" });
     }
 
     const email = result.data.customer.email;
     const subscriptionCode = result.data.subscription;
 
-    // ⚠️ IMPORTANT:
-    // DO NOT set subscribed=true here
-    // Webhook will do that
-
-    res.json({
-      success: true,
-      message: "Payment received. Subscription activating...",
-      email,
-      subscriptionCode,
-    });
-
+    res.json({ success: true, message: "Payment received. Subscription activating...", email, subscriptionCode });
   } catch (err) {
-    console.error("Callback verify error:", err);
-    res.status(500).json({
-      success: false,
-      message: "Server error",
-    });
+    console.error("verify-payment error:", err);
+    res.status(500).json({ success: false, message: "Server error" });
   }
 });
-// IMPORTANT: raw body middleware (must be before this route)
-app.post(
-  "/paystack/webhook",
-  express.raw({ type: "application/json" }),
-  async (req, res) => {
-    const signature = req.headers["x-paystack-signature"];
 
-    // Verify webhook signature
-    const hash = crypto
-      .createHmac("sha512", process.env.PAYSTACK_SECRET_KEY)
-      .update(req.body)
-      .digest("hex");
+// ========================
+// Paystack webhook
+// ========================
+app.post("/paystack/webhook", express.raw({ type: "application/json" }), async (req, res) => {
+  const signature = req.headers["x-paystack-signature"];
+  const hash = crypto.createHmac("sha512", process.env.PAYSTACK_SECRET_KEY)
+    .update(req.body.toString())
+    .digest("hex");
 
-    if (hash !== signature) {
-      return res.sendStatus(401);
+  if (hash !== signature) return res.sendStatus(401);
+
+  const event = JSON.parse(req.body.toString());
+
+  try {
+    // Charge success
+    if (event.event === "charge.success") {
+      const { customer, subscription } = event.data;
+      const email = customer.email;
+
+      const { data: user } = await supabase.from("users").select("id").eq("email", email).single();
+      if (!user) return res.sendStatus(200);
+
+      await supabase.from("users").update({
+        subscribed: true,
+        plan: "pro",
+        subscription_status: "active",
+        subscription_code: subscription,
+        paystack_customer_code: customer.customer_code,
+        subscribed_at: new Date().toISOString(),
+      }).eq("id", user.id);
+
+      await supabase.from("subscriptions").upsert({
+        user_id: user.id,
+        email,
+        plan: "pro",
+        provider: "paystack",
+        subscription_code: subscription,
+        status: "active",
+        updated_at: new Date().toISOString(),
+      });
     }
 
-    const event = JSON.parse(req.body.toString());
-
-    try {
-      // =========================
-      // SUBSCRIPTION ACTIVATED
-      // =========================
-      if (event.event === "charge.success") {
-        const {
-          customer,
-          subscription,
-          plan,
-        } = event.data;
-
-        const email = customer.email;
-        const subscriptionCode = subscription;
-        const customerCode = customer.customer_code;
-
-        // 1️⃣ Find user by email
-        const { data: user } = await supabase
-          .from("users")
-          .select("id")
-          .eq("email", email)
-          .single();
-
-        if (!user) return res.sendStatus(200);
-
-        // 2️⃣ Update user (FINAL authority)
-        await supabase.from("users").update({
-          subscribed: true,
-          plan: "pro",
-          subscription_status: "active",
-          subscription_code: subscriptionCode,
-          paystack_customer_code: customerCode,
-          subscribed_at: new Date().toISOString(),
-        }).eq("id", user.id);
-
-        // 3️⃣ Save subscription record
-        await supabase.from("subscriptions").upsert({
-          user_id: user.id,
-          email,
-          plan: "pro",
-          provider: "paystack",
-          subscription_code: subscriptionCode,
-          status: "active",
-          updated_at: new Date().toISOString(),
-        });
-      }
-
-      // =========================
-      // PAYMENT FAILED
-      // =========================
-      if (event.event === "invoice.payment_failed") {
-        const email = event.data.customer.email;
-
-        await supabase
-          .from("users")
-          .update({
-            subscribed: false,
-            subscription_status: "inactive",
-          })
-          .eq("email", email);
-      }
-
-      // =========================
-      // SUBSCRIPTION CANCELLED
-      // =========================
-      if (event.event === "subscription.disable") {
-        const subscriptionCode = event.data.subscription_code;
-
-        await supabase
-          .from("users")
-          .update({
-            subscribed: false,
-            subscription_status: "cancelled",
-          })
-          .eq("subscription_code", subscriptionCode);
-      }
-
-      res.sendStatus(200);
-
-    } catch (err) {
-      console.error("Webhook error:", err);
-      res.sendStatus(500);
+    // Payment failed
+    if (event.event === "invoice.payment_failed") {
+      const email = event.data.customer.email;
+      await supabase.from("users").update({
+        subscribed: false,
+        subscription_status: "inactive",
+      }).eq("email", email);
     }
+
+    // Subscription cancelled
+    if (event.event === "subscription.disable") {
+      const subscriptionCode = event.data.subscription_code;
+      await supabase.from("users").update({
+        subscribed: false,
+        subscription_status: "cancelled",
+      }).eq("subscription_code", subscriptionCode);
+    }
+
+    res.sendStatus(200);
+  } catch (err) {
+    console.error("Webhook error:", err);
+    res.sendStatus(500);
   }
-);
+});
+
 // Start server
 const PORT = process.env.PORT || 8000;
 app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
