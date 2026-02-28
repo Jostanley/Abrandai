@@ -9,7 +9,10 @@ const OpenAI = require("openai");
 dotenv.config();
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin:"https://abrand-a5a8.onrender.com",
+  credential:true,
+}));
 app.use(express.json());
 
 // Supabase client with Service Role key
@@ -235,7 +238,7 @@ ${(rules?.bannedWords || []).map(w => `- ${w}`).join("\n")}
 app.post("/verify-payment", async (req, res) => {
   const { reference } = req.body;
   if (!reference) return res.status(400).json({ error: "Transaction reference required" });
-
+ console.log("transaction reference")
   try {
     const verifyRes = await fetch(`https://api.paystack.co/transaction/verify/${reference}`, {
       headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` },
@@ -244,15 +247,18 @@ app.post("/verify-payment", async (req, res) => {
 
     if (!result.status || result.data.status !== "success") {
       return res.status(400).json({ success: false, message: "Payment verification failed" });
+      console.log("payment verification failed")
     }
 
     const email = result.data.customer.email;
     const subscriptionCode = result.data.subscription;
 
     res.json({ success: true, message: "Payment received. Subscription activating...", email, subscriptionCode });
+    console.log("Payment received")
   } catch (err) {
     console.error("verify-payment error:", err);
     res.status(500).json({ success: false, message: "Server error" });
+    console.log("server error")
   }
 });
 
@@ -264,7 +270,7 @@ app.post("/paystack/webhook", express.raw({ type: "application/json" }), async (
   const hash = crypto.createHmac("sha512", process.env.PAYSTACK_SECRET_KEY)
     .update(req.body.toString())
     .digest("hex");
-
+ console.log("hash")
   if (hash !== signature) return res.sendStatus(401);
 
   const event = JSON.parse(req.body.toString());
@@ -272,6 +278,7 @@ app.post("/paystack/webhook", express.raw({ type: "application/json" }), async (
   try {
     // Charge success
     if (event.event === "charge.success") {
+      console.log("charge success")
       const { customer, subscription } = event.data;
       const email = customer.email;
 
@@ -297,7 +304,7 @@ app.post("/paystack/webhook", express.raw({ type: "application/json" }), async (
         updated_at: new Date().toISOString(),
       });
     }
-
+console.log("updated")
     // Payment failed
     if (event.event === "invoice.payment_failed") {
       const email = event.data.customer.email;
@@ -315,10 +322,11 @@ app.post("/paystack/webhook", express.raw({ type: "application/json" }), async (
         subscription_status: "cancelled",
       }).eq("subscription_code", subscriptionCode);
     }
-
+    console.log("subscriptionCode")
     res.sendStatus(200);
   } catch (err) {
     console.error("Webhook error:", err);
+    console.log(err.message)
     res.sendStatus(500);
   }
 });
