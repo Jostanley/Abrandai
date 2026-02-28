@@ -265,69 +265,154 @@ app.post("/verify-payment", async (req, res) => {
 // ========================
 // Paystack webhook
 // ========================
-app.post("/paystack/webhook", express.raw({ type: "application/json" }), async (req, res) => {
-  const signature = req.headers["x-paystack-signature"];
-  const hash = crypto.createHmac("sha512", process.env.PAYSTACK_SECRET_KEY)
-    .update(req.body.toString())
-    .digest("hex");
- console.log("hash")
-  if (hash !== signature) return res.sendStatus(401);
+app.post(
+  "/paystack/webhook",
+  express.raw({ type: "application/json" }),
+  async (req, res) => {
+    const signature = req.headers["x-paystack-signature"];
 
-  const event = JSON.parse(req.body.toString());
+    if (!signature) return res.sendStatus(400);
 
+    const hash = crypto
+      .createHmac("sha512", process.env.PAYSTACK_SECRET_KEY)
+      .update(req.body)
+      .digest("hex");
+
+    console.log("Generated hash:", hash);
+    console.log("Paystack signature:", signature);
+
+    if (hash !== signature) return res.sendStatus(401);
+
+    const event = JSON.parse(req.body);
+
+    try {
+      if (event.event === "charge.success") {
+        console.log("Charge success received");
+
+        const { customer, subscription } = event.data;
+        const email = customer.email;
+
+        const { data: user } = await supabase
+          .from("users")
+          .select("id")
+          .eq("email", email)
+          .single();
+
+        if (!user) return res.sendStatus(200);
+
+        await supabase.from("users").update({
+          subscribed: true,
+          plan: "pro",
+          subscription_status: "active",
+          subscription_code: subscription,
+          paystack_customer_code: customer.customer_code,
+          subscribed_at: new Date().toISOString(),
+        }).eq("id", user.id);
+
+        await supabase.from("subscriptions").upsert({
+          user_id: user.id,
+          email,
+          plan: "pro",
+          provider: "paystack",
+          subscription_code: subscription,
+          status: "active",
+          updated_at: new Date().toISOString(),
+        });
+      }
+
+      if (event.event === "invoice.payment_failed") {
+        const email = event.data.customer.email;
+
+        await supabase.from("users").update({
+          subscribed: false,
+          subscription_status: "inactive",
+        }).eq("email", email);
+      }
+
+      if (event.event === "subscription.disable") {
+        const subscriptionCode = event.data.subscription_code;
+
+        await supabase.from("users").update({
+          subscribed: false,
+          subscription_status: "cancelled",
+        }).eq("subscription_code", subscriptionCode);
+      }
+
+      res.sendStatus(200);
+    } catch (err) {
+      console.error("Webhook error:", err.message);
+      res.sendStatus(500);
+    }
+  }
+);
+
+// cancel subscription
+app.post("/cancel-subscription", async (req, res) => {
   try {
-    // Charge success
-    if (event.event === "charge.success") {
-      console.log("charge success")
-      const { customer, subscription } = event.data;
-      const email = customer.email;
+    const authHeader = req.headers.authorization;
 
-      const { data: user } = await supabase.from("users").select("id").eq("email", email).single();
-      if (!user) return res.sendStatus(200);
-
-      await supabase.from("users").update({
-        subscribed: true,
-        plan: "pro",
-        subscription_status: "active",
-        subscription_code: subscription,
-        paystack_customer_code: customer.customer_code,
-        subscribed_at: new Date().toISOString(),
-      }).eq("id", user.id);
-
-      await supabase.from("subscriptions").upsert({
-        user_id: user.id,
-        email,
-        plan: "pro",
-        provider: "paystack",
-        subscription_code: subscription,
-        status: "active",
-        updated_at: new Date().toISOString(),
-      });
-    }
-console.log("updated")
-    // Payment failed
-    if (event.event === "invoice.payment_failed") {
-      const email = event.data.customer.email;
-      await supabase.from("users").update({
-        subscribed: false,
-        subscription_status: "inactive",
-      }).eq("email", email);
+    if (!authHeader) {
+      return res.status(401).json({ error: "No token provided" });
     }
 
-    // Subscription cancelled
-    if (event.event === "subscription.disable") {
-      const subscriptionCode = event.data.subscription_code;
-      await supabase.from("users").update({
-        subscribed: false,
-        subscription_status: "cancelled",
-      }).eq("subscription_code", subscriptionCode);
+    const token = authHeader.replace("Bearer ", "");
+
+    // ✅ Verify Supabase JWT
+    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+
+    if (error || !user) {
+      return res.status(401).json({ error: "Invalid token" });
     }
-    console.log("subscriptionCode")
-    res.sendStatus(200);
+
+    // 🔥 Now we trust this user
+    const userId = user.id;
+
+    // Get subscription data
+    const { data: dbUser } = await supabaseAdmin
+      .from("users")
+      .select("subscription_code, paystack_customer_code")
+      .eq("id", userId)
+      .single();
+
+    if (!dbUser || !dbUser.subscription_code) {
+      return res.status(400).json({ error: "No active subscription" });
+    }
+
+    // Disable subscription on Paystack
+    const response = await fetch("https://api.paystack.co/subscription/disable", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        code: dbUser.subscription_code,
+        token: dbUser.paystack_customer_code,
+      }),
+    });
+
+    const result = await response.json();
+
+    if (!result.status) {
+      return res.status(400).json({ error: "Paystack cancel failed" });
+    }
+
+    // Update database
+    await supabaseAdmin.from("users").update({
+      subscribed: false,
+      subscription_status: "cancelled",
+    }).eq("id", userId);
+
+    await supabaseAdmin.from("subscriptions").update({
+      status: "cancelled",
+      updated_at: new Date().toISOString(),
+    }).eq("user_id", userId);
+
+    res.json({ success: true });
+
   } catch (err) {
-    console.error("Webhook error:", err);
-    console.log(err.message)
-    res.sendStatus(500);
+    console.error("Cancel error:", err.message);
+    res.status(500).json({ error: "Server error" });
   }
 });
 
