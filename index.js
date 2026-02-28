@@ -265,40 +265,54 @@ app.post("/verify-payment", async (req, res) => {
 // ========================
 // Paystack webhook
 // ========================
+const crypto = require("crypto");
+
 app.post(
   "/paystack/webhook",
   express.raw({ type: "application/json" }),
   async (req, res) => {
-    const signature = req.headers["x-paystack-signature"];
-
-    if (!signature) return res.sendStatus(400);
-
-    const hash = crypto
-      .createHmac("sha512", process.env.PAYSTACK_SECRET_KEY)
-      .update(req.body)
-      .digest("hex");
-
-    console.log("Generated hash:", hash);
-    console.log("Paystack signature:", signature);
-
-    if (hash !== signature) return res.sendStatus(401);
-
-    const event = JSON.parse(req.body);
-
     try {
+      const signature = req.headers["x-paystack-signature"];
+      if (!signature) return res.sendStatus(400);
+
+      // ✅ Verify webhook signature
+      const hash = crypto
+        .createHmac("sha512", process.env.PAYSTACK_SECRET_KEY)
+        .update(req.body) // must be Buffer
+        .digest("hex");
+
+      if (hash !== signature) {
+        console.log("❌ Invalid signature");
+        return res.sendStatus(401);
+      }
+
+      console.log("✅ Webhook verified");
+
+      // ✅ Safely parse raw body
+      const event = JSON.parse(req.body.toString());
+
+      /* ==============================
+         HANDLE EVENTS
+      ============================== */
+
       if (event.event === "charge.success") {
-        console.log("Charge success received");
+        console.log("💰 Charge success received");
 
         const { customer, subscription } = event.data;
-        const email = customer.email;
+        const email = customer?.email;
 
-        const { data: user } = await supabase
+        if (!email) return res.sendStatus(200);
+
+        const { data: user, error } = await supabase
           .from("users")
           .select("id")
           .eq("email", email)
           .single();
 
-        if (!user) return res.sendStatus(200);
+        if (error || !user) {
+          console.log("User not found");
+          return res.sendStatus(200);
+        }
 
         await supabase.from("users").update({
           subscribed: true,
@@ -321,7 +335,10 @@ app.post(
       }
 
       if (event.event === "invoice.payment_failed") {
-        const email = event.data.customer.email;
+        console.log("⚠️ Payment failed");
+
+        const email = event.data?.customer?.email;
+        if (!email) return res.sendStatus(200);
 
         await supabase.from("users").update({
           subscribed: false,
@@ -330,7 +347,10 @@ app.post(
       }
 
       if (event.event === "subscription.disable") {
-        const subscriptionCode = event.data.subscription_code;
+        console.log("🚫 Subscription cancelled");
+
+        const subscriptionCode = event.data?.subscription_code;
+        if (!subscriptionCode) return res.sendStatus(200);
 
         await supabase.from("users").update({
           subscribed: false,
@@ -338,14 +358,13 @@ app.post(
         }).eq("subscription_code", subscriptionCode);
       }
 
-      res.sendStatus(200);
+      return res.sendStatus(200);
     } catch (err) {
-      console.error("Webhook error:", err.message);
-      res.sendStatus(500);
+      console.error("🔥 Webhook error:", err);
+      return res.sendStatus(500);
     }
   }
 );
-
 // cancel subscription
 app.post("/cancel-subscription", async (req, res) => {
   try {
