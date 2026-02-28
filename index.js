@@ -11,7 +11,7 @@ dotenv.config();
 const app = express();
 app.use(cors({
   origin:"https://abrand-a5a8.onrender.com",
-  credential:true,
+  credentials:true,
 }));
 app.use(express.json());
 
@@ -49,8 +49,10 @@ const verifySupabaseToken = async (req, res, next) => {
   
 
   if (!authHeader?.startsWith("Bearer ")) {
-    return res.status(401).json({ error: "Missing token" })
+    
     console.log("missing token")
+    return res.status(401).json({ error: "Missing token" })
+    
   }
 
   const token = authHeader.replace("Bearer ", "");
@@ -58,8 +60,9 @@ const verifySupabaseToken = async (req, res, next) => {
   const { data, error } = await supabaseAdmin.auth.getUser(token);
 
   if (error || !data?.user) {
-    return res.status(401).json({ error: "Invalid or expired token" });
     console.log("invalid or expired token")
+    return res.status(401).json({ error: "Invalid or expired token" });
+    
   }
 
   req.user = data.user;
@@ -265,7 +268,6 @@ app.post("/verify-payment", async (req, res) => {
 // ========================
 // Paystack webhook
 // ========================
-const crypto = require("crypto");
 
 app.post(
   "/paystack/webhook",
