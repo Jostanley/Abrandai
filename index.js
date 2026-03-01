@@ -36,9 +36,12 @@ app.post(
       // ✅ Verify webhook signature
       const hash = crypto
         .createHmac("sha512", process.env.PAYSTACK_SECRET_KEY)
-        .update(req.body) // must be Buffer
+         .update(req.body.toString("utf8")) // must be Buffer
         .digest("hex");
         console.log(hash)
+        console.log("Body type:", typeof req.body);
+console.log("Is Buffer:", Buffer.isBuffer(req.body));
+
         const hashBuffer = Buffer.from(hash, "hex");
 const sigBuffer = Buffer.from(signature, "hex");
 
