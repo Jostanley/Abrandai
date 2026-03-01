@@ -30,6 +30,7 @@ app.post(
   async (req, res) => {
     try {
       const signature = req.headers["x-paystack-signature"];
+      console.log(signature)
       if (!signature) return res.sendStatus(400);
 
       // ✅ Verify webhook signature
@@ -37,10 +38,18 @@ app.post(
         .createHmac("sha512", process.env.PAYSTACK_SECRET_KEY)
         .update(req.body) // must be Buffer
         .digest("hex");
-        const isValid = crypto.timingSafeEqual(
-  Buffer.from(hash, "hex"),
-  Buffer.from(signature, "hex")
-);
+        
+        const hashBuffer = Buffer.from(hash, "hex");
+const sigBuffer = Buffer.from(signature, "hex");
+
+if (hashBuffer.length !== sigBuffer.length) {
+  console.log("❌ Length mismatch");
+  console.log("Hash length:", hashBuffer.length);
+  console.log("Sig length:", sigBuffer.length);
+  return res.sendStatus(401);
+}
+
+const isValid = crypto.timingSafeEqual(hashBuffer, sigBuffer);
 
       if (!isValid) {
         console.log("❌ Invalid signature");
