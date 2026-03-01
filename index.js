@@ -38,7 +38,7 @@ app.post(
         .createHmac("sha512", process.env.PAYSTACK_SECRET_KEY)
         .update(req.body) // must be Buffer
         .digest("hex");
-        
+        console.log(hash)
         const hashBuffer = Buffer.from(hash, "hex");
 const sigBuffer = Buffer.from(signature, "hex");
 
