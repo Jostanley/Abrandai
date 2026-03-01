@@ -13,9 +13,6 @@ app.use(cors({
   origin:"https://abrand-a5a8.onrender.com",
   credentials:true,
 }));
-app.use(express.json());
-
-// Supabase client with Service Role key
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -26,6 +23,111 @@ const supabaseAdmin = supabase; // ✅ Admin client
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_key
 });
+
+app.post(
+  "/paystack/webhook",
+  express.raw({ type: "application/json" }),
+  async (req, res) => {
+    try {
+      const signature = req.headers["x-paystack-signature"];
+      if (!signature) return res.sendStatus(400);
+
+      // ✅ Verify webhook signature
+      const hash = crypto
+        .createHmac("sha512", process.env.PAYSTACK_SECRET_KEY)
+        .update(req.body) // must be Buffer
+        .digest("hex");
+        const isValid = crypto.timingSafeEqual(
+  Buffer.from(hash, "hex"),
+  Buffer.from(signature, "hex")
+);
+
+      if (!isValid) {
+        console.log("❌ Invalid signature");
+        return res.sendStatus(401);
+      }
+
+      console.log("✅ Webhook verified");
+
+      // ✅ Safely parse raw body
+      const event = JSON.parse(req.body.toString());
+
+      /* ==============================
+         HANDLE EVENTS
+      ============================== */
+
+      if (event.event === "charge.success") {
+        console.log("💰 Charge success received");
+
+        const { customer, subscription } = event.data;
+        const email = customer?.email;
+
+        if (!email) return res.sendStatus(200);
+
+        const { data: user, error } = await supabaseAdmin
+            .from("users")
+          .select("id")
+          .eq("email", email)
+          .single();
+
+        if (error || !user) {
+          console.log("User not found");
+          return res.sendStatus(200);
+        }
+
+        await supabaseAdmin.from("users").update({
+          subscribed: true,
+          plan: "pro",
+          subscription_status: "active",
+          subscription_code: subscription,
+          paystack_customer_code: customer.customer_code,
+          subscribed_at: new Date().toISOString(),
+        }).eq("id", user.id);
+
+        await supabaseAdmin.from("subscriptions").upsert({
+          user_id: user.id,
+          email,
+          plan: "pro",
+          provider: "paystack",
+          subscription_code: subscription,
+          status: "active",
+          updated_at: new Date().toISOString(),
+        });
+      }
+
+      if (event.event === "invoice.payment_failed") {
+        console.log("⚠️ Payment failed");
+
+        const email = event.data?.customer?.email;
+        if (!email) return res.sendStatus(200);
+
+        await supabaseAdmin.from("users").update({
+          subscribed: false,
+          subscription_status: "inactive",
+        }).eq("email", email);
+      }
+
+      if (event.event === "subscription.disable") {
+        console.log("🚫 Subscription cancelled");
+
+        const subscriptionCode = event.data?.subscription_code;
+        if (!subscriptionCode) return res.sendStatus(200);
+
+        await supabaseAdmin.from("users").update({
+          subscribed: false,
+          subscription_status: "cancelled",
+        }).eq("subscription_code", subscriptionCode);
+      }
+
+      return res.sendStatus(200);
+    } catch (err) {
+      console.error("🔥 Webhook error:", err);
+      return res.sendStatus(500);
+    }
+  }
+);
+app.use(express.json())
+// Supabase client with Service Role key
 
 app.get('/', (req,res)=>{
   console.log("backend working")
@@ -269,104 +371,7 @@ app.post("/verify-payment", async (req, res) => {
 // Paystack webhook
 // ========================
 
-app.post(
-  "/paystack/webhook",
-  express.raw({ type: "application/json" }),
-  async (req, res) => {
-    try {
-      const signature = req.headers["x-paystack-signature"];
-      if (!signature) return res.sendStatus(400);
 
-      // ✅ Verify webhook signature
-      const hash = crypto
-        .createHmac("sha512", process.env.PAYSTACK_SECRET_KEY)
-        .update(req.body) // must be Buffer
-        .digest("hex");
-
-      if (hash !== signature) {
-        console.log("❌ Invalid signature");
-        return res.sendStatus(401);
-      }
-
-      console.log("✅ Webhook verified");
-
-      // ✅ Safely parse raw body
-      const event = JSON.parse(req.body.toString());
-
-      /* ==============================
-         HANDLE EVENTS
-      ============================== */
-
-      if (event.event === "charge.success") {
-        console.log("💰 Charge success received");
-
-        const { customer, subscription } = event.data;
-        const email = customer?.email;
-
-        if (!email) return res.sendStatus(200);
-
-        const { data: user, error } = await supabase
-          .from("users")
-          .select("id")
-          .eq("email", email)
-          .single();
-
-        if (error || !user) {
-          console.log("User not found");
-          return res.sendStatus(200);
-        }
-
-        await supabase.from("users").update({
-          subscribed: true,
-          plan: "pro",
-          subscription_status: "active",
-          subscription_code: subscription,
-          paystack_customer_code: customer.customer_code,
-          subscribed_at: new Date().toISOString(),
-        }).eq("id", user.id);
-
-        await supabase.from("subscriptions").upsert({
-          user_id: user.id,
-          email,
-          plan: "pro",
-          provider: "paystack",
-          subscription_code: subscription,
-          status: "active",
-          updated_at: new Date().toISOString(),
-        });
-      }
-
-      if (event.event === "invoice.payment_failed") {
-        console.log("⚠️ Payment failed");
-
-        const email = event.data?.customer?.email;
-        if (!email) return res.sendStatus(200);
-
-        await supabase.from("users").update({
-          subscribed: false,
-          subscription_status: "inactive",
-        }).eq("email", email);
-      }
-
-      if (event.event === "subscription.disable") {
-        console.log("🚫 Subscription cancelled");
-
-        const subscriptionCode = event.data?.subscription_code;
-        if (!subscriptionCode) return res.sendStatus(200);
-
-        await supabase.from("users").update({
-          subscribed: false,
-          subscription_status: "cancelled",
-        }).eq("subscription_code", subscriptionCode);
-      }
-
-      return res.sendStatus(200);
-    } catch (err) {
-      console.error("🔥 Webhook error:", err);
-      return res.sendStatus(500);
-    }
-  }
-);
 // cancel subscription
 app.post("/cancel-subscription", async (req, res) => {
   try {
