@@ -75,7 +75,7 @@ const isValid = crypto.timingSafeEqual(hashBuffer, sigBuffer);
         const email = customer?.email;
 
         if (!email) return res.sendStatus(200);
-
+         console.log(email)
         const { data: user, error } = await supabaseAdmin
             .from("users")
           .select("id")
