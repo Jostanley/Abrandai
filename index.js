@@ -194,7 +194,7 @@ app.post("/api/user/sync", verifySupabaseToken, async (req, res) => {
 
     const auth_id = user.id;
     const email = user.email;
-    
+    console.log(user)
     // 1️⃣ Upsert user
     const { error: userError } = await supabaseAdmin
       .from("users")
