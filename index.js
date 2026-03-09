@@ -204,7 +204,7 @@ app.post("/api/user/sync", verifySupabaseToken, async (req, res) => {
         
       });
 
-    if (!userError) {
+    if (userError) {
       console.error(userError);
       return res.status(500).json({ message: "User sync failed" });
     }
