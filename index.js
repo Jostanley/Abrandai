@@ -68,47 +68,6 @@ const isValid = crypto.timingSafeEqual(hashBuffer, sigBuffer);
          HANDLE EVENTS
       ============================== */
 
-      if (event.event === "charge.success") {
-        console.log("💰 Charge success received");
-
-        const { customer, subscription } = event.data;
-        const email = customer?.email;
-
-        if (!email) {
-          return res.sendStatus(200);
-        }
-         console.log(email)
-        const { data: user, error } = await supabaseAdmin
-            .from("users")
-          .select("id")
-          .eq("email", email)
-          .single();
-
-        if (error || !user) {
-          console.log("User not found");
-          return res.sendStatus(200);
-        }
-
-        await supabaseAdmin.from("users").update({
-          subscribed: true,
-          plan: "pro",
-          subscription_status: "active",
-          subscription_code: subscription,
-          paystack_customer_code: customer.customer_code,
-          subscribed_at: new Date().toISOString(),
-        }).eq("id", user.id);
-
-        await supabaseAdmin.from("subscriptions").upsert({
-          user_id: user.id,
-          email,
-          plan: "pro",
-          provider: "paystack",
-          subscription_code: subscription,
-          status: "active",
-          updated_at: new Date().toISOString(),
-        });
-      }
-
       if (event.event === "invoice.payment_failed") {
         console.log("⚠️ Payment failed");
 
