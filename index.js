@@ -66,7 +66,50 @@ const isValid = crypto.timingSafeEqual(hashBuffer, sigBuffer);
 
       /* ==============================
          HANDLE EVENTS
-      ============================== */
+      ============================== */if (event.event === "charge.success") {
+  console.log("💰 Charge success received");
+
+  const { customer, reference, amount, currency, paid_at, status } = event.data;
+  const email = customer?.email;
+
+  const timeStamp = new Date().toISOString();
+
+  if (!email) {
+    return res.sendStatus(200);
+  }
+
+  const { data: user, error } = await supabaseAdmin
+    .from("users")
+    .select("id")
+    .eq("email", email)
+    .single();
+
+  if (error || !user) {
+    console.log("User not found");
+    return res.sendStatus(401);
+  }
+
+  await supabaseAdmin.from("subscription").update({
+    subscribed: true,
+    plan: "pro",
+    email: email,
+    subscription_status: "active",
+    subscription_code: reference, // better to store reference
+    paystack_customer_code: customer.customer_code,
+    subscribed_at: timeStamp,
+  }).eq("id", user.id);
+
+  await supabaseAdmin.from("payment").upsert({
+    user_id: user.id,
+    email: email,
+    amount: amount / 100, // convert from kobo/pesewas
+    currency: currency,
+    payment_reference: reference,
+    provider: "paystack",
+    status: status,
+    created_at: paid_at || timeStamp,
+  });
+}
 
       if (event.event === "invoice.payment_failed") {
         console.log("⚠️ Payment failed");
@@ -186,17 +229,16 @@ app.post("/api/user/sync", verifySupabaseToken, async (req, res) => {
 
     if (!existingSub) {
       const { data: newSub, error: subCreateError } =
-        await supabaseAdmin
-          .from("subscriptions")
-          .insert({
-            user_id: auth_id,
-            plan: "free",
-            status: "active",
-            expires_at: null,
-          })
-          .select()
-          .single();
-
+         await supabaseAdmin.from("subscription").insert({
+    subscribed: false,
+    plan: "free",
+    email: email,
+    subscription_status: "free",
+    subscription_code: null, // better to store reference
+    paystack_customer_code:null,
+    subscribed_at: timeStamp,
+  }).select().single();
+  
       if (subCreateError) {
         console.error(subCreateError);
         return res.status(500).json({ message: "Subscription creation failed" });
