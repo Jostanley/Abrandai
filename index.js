@@ -231,7 +231,7 @@ app.post("/api/user/sync", verifySupabaseToken, async (req, res) => {
     if (!existingSub) {
       const { data: newSub, error: subCreateError } =
          await supabaseAdmin.from("subscriptions").insert({
-    user_id:user.id;
+    
     subscribed: false,
     plan: "free",
     email: email,
