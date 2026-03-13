@@ -164,6 +164,7 @@ const isValid = crypto.timingSafeEqual(hashBuffer, sigBuffer);
   console.error("🔥 Webhook error:", err);
   return res.sendStatus(500);
 }
+})
 app.use(express.json())
 // Supabase client with Service Role key
 
