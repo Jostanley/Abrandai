@@ -89,7 +89,7 @@ const isValid = crypto.timingSafeEqual(hashBuffer, sigBuffer);
     return res.sendStatus(401);
   }
 
-  await supabaseAdmin.from("subscription").update({
+  await supabaseAdmin.from("subscriptions").update({
     subscribed: true,
     plan: "pro",
     email: email,
@@ -108,7 +108,7 @@ const isValid = crypto.timingSafeEqual(hashBuffer, sigBuffer);
     provider: "paystack",
     status: status,
     created_at: paid_at || timeStamp,
-  });
+  }).eq("id", user.id)
 }
 
       if (event.event === "invoice.payment_failed") {
@@ -193,6 +193,7 @@ const verifySupabaseToken = async (req, res, next) => {
 app.post("/api/user/sync", verifySupabaseToken, async (req, res) => {
   try {
     const user = req.user;
+    const timeStamp = new Date().toISOString();
 
     const auth_id = user.id;
     const email = user.email;
@@ -229,7 +230,8 @@ app.post("/api/user/sync", verifySupabaseToken, async (req, res) => {
 
     if (!existingSub) {
       const { data: newSub, error: subCreateError } =
-         await supabaseAdmin.from("subscription").insert({
+         await supabaseAdmin.from("subscriptions").insert({
+    user_id:auth_id;
     subscribed: false,
     plan: "free",
     email: email,
