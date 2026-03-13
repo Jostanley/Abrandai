@@ -64,17 +64,17 @@ const isValid = crypto.timingSafeEqual(hashBuffer, sigBuffer);
       // ✅ Safely parse raw body
       const event = JSON.parse(req.body.toString());
 
-  if (!event || !req.body.data) {
+  if (!event) {
     console.log("No event data");
     return res.sendStatus(400);
   }
 
-  const { customer, reference, amount, currency, paid_at, status, subscription_code } = req.body.data;
+  const { customer, reference, amount, currency, paid_at, status, subscription_code } = event.data;
   const email = customer?.email;
   const timeStamp = new Date().toISOString();
 
   // ✅ Handle successful charge
-  if (event === "charge.success") {
+  if (event.event === "charge.success") {
     console.log("💰 Charge success received");
 
     if (!email) {
@@ -123,7 +123,7 @@ const isValid = crypto.timingSafeEqual(hashBuffer, sigBuffer);
   }
 
   // ⚠️ Handle failed payment
-  if (event === "invoice.payment_failed") {
+  if (event.event === "invoice.payment_failed") {
     console.log("⚠️ Payment failed");
 
     if (!email) {
@@ -140,7 +140,7 @@ const isValid = crypto.timingSafeEqual(hashBuffer, sigBuffer);
   }
 
   // 🚫 Handle subscription cancel
-  if (event === "subscription.disable") {
+  if (event.event === "subscription.disable") {
     console.log("🚫 Subscription cancelled");
 
     if (!subscription_code) {
