@@ -90,7 +90,7 @@ app.post(
             paystack_customer_code: customer.customer_code,
             subscribed_at: timeStamp,
           })
-          .eq("id", user.id);
+          .eq("id", user.id)
           .select()
           .single()
 
