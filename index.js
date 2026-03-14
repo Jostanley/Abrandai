@@ -250,6 +250,7 @@ app.post("/api/user/sync", verifySupabaseToken, async (req, res) => {
          await supabaseAdmin.from("subscriptions").insert({
     
     subscribed: false,
+    user_id:user.id,
     plan: "free",
     email: email,
     subscription_status: "free",
