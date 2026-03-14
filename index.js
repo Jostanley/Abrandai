@@ -93,7 +93,7 @@ app.post(
           .eq("id", user.id);
 
       const pay =  await supabaseAdmin
-          .from("payment")
+          .from("payments")
           .insert({
             user_id: user.id,
             email,
