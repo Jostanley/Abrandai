@@ -91,6 +91,8 @@ app.post(
             subscribed_at: timeStamp,
           })
           .eq("id", user.id);
+          .select()
+          .single()
 
       const pay =  await supabaseAdmin
           .from("payments")
