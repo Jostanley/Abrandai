@@ -81,7 +81,7 @@ app.post(
 
       const sub = await supabaseAdmin
           .from("subscriptions")
-          .update({
+          .insert({
             subscribed: true,
             plan: "pro",
             email:email,
@@ -248,40 +248,27 @@ app.post("/api/user/sync", verifySupabaseToken, async (req, res) => {
     let subscription = existingSub;
 
     if (!existingSub) {
-      const { data: newSub, error: subCreateError } =
-         await supabaseAdmin.from("subscriptions").insert({
-    
-    subscribed: false,
-    user_id:user.id,
-    plan: "free",
-    email: email,
-    subscription_status: "free",
-    subscription_code: null, // better to store reference
-    paystack_customer_code:null,
-    subscribed_at: timeStamp,
-  }).select().single();
-  
-      if (subCreateError) {
-        console.error(subCreateError);
-        return res.status(500).json({ message: "Subscription creation failed" });
-      }
-
-      subscription = newSub;
       
-    }
-
-    // 4️⃣ Final response
-    res.status(200).json({
+ return res.status(200).json({
       success: true,
       user: {
         id: auth_id,
         email,
-      
+        plan:"free"
       },
-      subscription,
     });
-console.log(subscription)
-    console.log("✅ User synced & subscription ensured");
+    }
+    // 4️⃣ Final response
+    console.log("pro user")
+    return res.status(200).json({
+      success: true,
+      user: {
+        id: auth_id,
+        email,
+        plan:"pro"
+      },
+    });
+    
   } catch (err) {
     console.error(err);
     res.status(401).json({ error: "Unauthorized" });
