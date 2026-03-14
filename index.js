@@ -82,6 +82,7 @@ app.post(
       const sub = await supabaseAdmin
           .from("subscriptions")
           .insert({
+            user_id:user.id,
             subscribed: true,
             plan: "pro",
             email:email,
