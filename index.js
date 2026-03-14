@@ -84,7 +84,7 @@ app.post(
           .update({
             subscribed: true,
             plan: "pro",
-            email;
+            email:email,
             subscription_status: "active",
             subscription_code: reference,
             paystack_customer_code: customer.customer_code,
