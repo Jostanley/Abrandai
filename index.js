@@ -66,7 +66,7 @@ app.post(
       // 🔹 SUCCESSFUL PAYMENT
       if (event.event === "charge.success") {
 
-        console.log("💰 Charge success received");
+        
 
         const { data: user } = await supabaseAdmin
           .from("users")
@@ -79,7 +79,7 @@ app.post(
           return res.sendStatus(404);
         }
 
-        await supabaseAdmin
+      const sub = await supabaseAdmin
           .from("subscriptions")
           .update({
             subscribed: true,
@@ -92,7 +92,7 @@ app.post(
           })
           .eq("id", user.id);
 
-        await supabaseAdmin
+      const pay =  await supabaseAdmin
           .from("payment")
           .insert({
             user_id: user.id,
@@ -104,7 +104,9 @@ app.post(
             status,
             created_at: paid_at || timeStamp,
           });
-
+console.log("💰 Charge success received");
+console.log(sub);
+console.log(pay);
         return res.sendStatus(200);
       }
 
@@ -113,14 +115,15 @@ app.post(
 
         console.log("⚠️ Payment failed");
 
-        await supabaseAdmin
+    const failuser = await supabaseAdmin
           .from("users")
           .update({
             subscribed: false,
             subscription_status: "inactive"
           })
           .eq("email", email);
-
+  console.log(failuser)
+  console.log("user failed to uodate subscriptions")
         return res.sendStatus(200);
       }
 
@@ -133,14 +136,15 @@ app.post(
           return res.sendStatus(400);
         }
 
-        await supabaseAdmin
+        const newfail = await supabaseAdmin
           .from("users")
           .update({
             subscribed: false,
             subscription_status: "cancelled"
           })
           .eq("subscription_code", subscription_code);
-
+         console.log(newfail)
+         console.log("its new fail")
         return res.sendStatus(200);
       }
 
