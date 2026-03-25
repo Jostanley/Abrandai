@@ -279,50 +279,79 @@ app.post("/api/user/sync", verifySupabaseToken, async (req, res) => {
 // ========================
 // AI chat route
 // ========================
-app.post("/ai/chat",verifySupabaseToken, async (req, res) => {
+app.post("/ai/chat", verifySupabaseToken, async (req, res) => {
   try {
-    const { userId, message } = req.body;
-    if (!userId || !message) return res.status(400).json({ error: "userId and message required" });
+    // ✅ Always trust token, not frontend
+    const userId = req.user.id;
+    const { message } = req.body;
 
-    // Fetch user data
-    const [brand, audience, rules] = await Promise.all([
-      fetchSingle("brandProfiles", userId),
-      fetchSingle("audienceProfiles", userId),
-      fetchSingle("aiRules", userId)
-    ]);
+    if (!message?.trim()) {
+      return res.status(400).json({ error: "Message is required" });
+    }
 
-    const { data: offers } = await supabase.from("offers").select("*").eq("user_id", userId);
-    const { data: memories } = await supabase
+    // ✅ Fetch brand profile
+    const { data: branddata, error: brandError } = await supabaseAdmin
+      .from("brandProfiles")
+      .select("*")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (brandError || !branddata) {
+      return res.status(404).json({ message: "No brand profile found" });
+    }
+
+    const {
+      name = "Unknown",
+      tone = "Neutral",
+      beliefs = [],
+      targetAudience = "General",
+      bannedWords = []
+    } = branddata;
+
+    // ✅ Fetch offers
+    const { data: offers, error: offersError } = await supabaseAdmin
+      .from("offers")
+      .select("*")
+      .eq("user_id", userId);
+
+    if (offersError) throw offersError;
+
+    // ✅ Fetch memory
+    const { data: memories, error: memoryError } = await supabaseAdmin
       .from("memorySummaries")
       .select("summary")
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(8);
 
+    if (memoryError) throw memoryError;
+
+    // ✅ Build prompt safely
     const systemPrompt = `
 You are an AI assistant representing this brand.
 
 BRAND:
-- Name: ${brand?.name || "Unknown"}
-- Tone: ${brand?.tone || "Neutral"}
+- Name: ${name}
+- Tone: ${tone}
 
 BELIEFS:
-${(brand?.beliefs || []).map(b => `- ${b}`).join("\n")}
+${beliefs.map(b => `- ${b}`).join("\n") || "- None"}
 
 AUDIENCE:
-- Target: ${audience?.targetAudience || "General"}
+- Target: ${targetAudience}
 
 OFFERS:
-${(offers || []).map(o => `- ${o.title}: ${o.description}`).join("\n")}
+${(offers || []).map(o => `- ${o.title}: ${o.description}`).join("\n") || "- None"}
 
 MEMORY:
-${(memories || []).map(m => `- ${m.summary}`).join("\n")}
+${(memories || []).map(m => `- ${m.summary}`).join("\n") || "- None"}
 
 RULES:
 Never use banned words:
-${(rules?.bannedWords || []).map(w => `- ${w}`).join("\n")}
+${bannedWords.map(w => `- ${w}`).join("\n") || "- None"}
 `;
 
+    // ✅ Generate AI response
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
@@ -331,34 +360,63 @@ ${(rules?.bannedWords || []).map(w => `- ${w}`).join("\n")}
       ]
     });
 
-    const reply = completion.choices[0]?.message?.content || "";
+    const reply =
+      completion?.choices?.[0]?.message?.content?.trim() || "";
 
-    // Save AI reply
-    const { data: post } = await supabase
+    if (!reply) {
+      return res.status(500).json({ error: "AI failed to generate reply" });
+    }
+
+    // ✅ Save post
+    const { data: post, error: postError } = await supabaseAdmin
       .from("posts")
-      .insert({ user_id: userId, content: reply })
+      .insert({
+        user_id: userId,
+        content: reply
+      })
       .select()
       .single();
 
-    // Summarize memory
+    if (postError) throw postError;
+
+    // ✅ Summarize memory
     const summaryCompletion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0,
-      messages: [{ role: "user", content: `Summarize this post into short AI memory:\n${reply}` }]
+      messages: [
+        {
+          role: "user",
+          content: `Summarize this into short memory:\n${reply}`
+        }
+      ]
     });
 
-    const memorySummary = summaryCompletion.choices[0]?.message?.content.trim() || "";
+    const memorySummary =
+      summaryCompletion?.choices?.[0]?.message?.content?.trim() || "";
 
-    await supabase.from("memorySummaries").insert({
-      user_id: userId,
-      post_id: post.id,
-      summary: memorySummary
+    // ✅ Save memory (only if exists)
+    if (memorySummary) {
+      await supabaseAdmin.from("memorySummaries").insert({
+        user_id: userId,
+        post_id: post.id,
+        summary: memorySummary
+      });
+    }
+
+    // ✅ Final response
+    return res.status(201).json({
+      reply,
+      post,
+      memorySummary
     });
 
-    res.json({ reply, post, memorySummary });
   } catch (err) {
     console.error("AI chat error:", err);
-    res.status(500).json({ error: err.message });
+
+    return res.status(500).json({
+      error: "Something went wrong",
+      details: err.message
+    });
   }
 });
 
