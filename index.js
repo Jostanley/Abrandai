@@ -302,10 +302,10 @@ app.post("/ai/chat", verifySupabaseToken, async (req, res) => {
 
     const {
       name = "Unknown",
-      tone = "Neutral",
+      tone = "",
       beliefs = [],
       targetAudience = "General",
-      bannedWords = []
+      bannedWords = [],
     } = branddata;
 
     // ✅ Fetch offers
@@ -318,7 +318,7 @@ app.post("/ai/chat", verifySupabaseToken, async (req, res) => {
 
     // ✅ Fetch memory
     const { data: memories, error: memoryError } = await supabaseAdmin
-      .from("memorySummaries")
+      .from("memorysummaries")
       .select("summary")
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
