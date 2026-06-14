@@ -394,7 +394,7 @@ const memorySummary = summaryResponse.text.trim();
       await supabaseAdmin.from("memorySummaries").insert({
         user_id: userId,
         post_id: post.id,
-        summary: text9Summary
+        summary: textSummary
       });
     }
 
