@@ -354,8 +354,8 @@ const ai = new GoogleGenAI({
 });
 
 const response = await ai.models.generateContent({
-  contents: systemPrompt + "\n\nUSER REQUEST:\n" + messagemodel: "gemini-2.5-flash",
-  
+  model: "gemini-2.5-flash",
+  contents: systemPrompt + "\n\nUSER REQUEST:\n" + message,
 });
 
 const reply = response.text?.trim();
