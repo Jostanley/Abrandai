@@ -9,10 +9,11 @@ const { GoogleGenAI } = require( "@google/genai");
 dotenv.config();
 
 const app = express();
-app.use(cors({
+app.use(cors())
+/*app.use(cors({
   origin:"https://abrand-a5a8.onrender.com",
   credentials:true,
-}));
+})); */
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -347,63 +348,61 @@ RULES:
 Never use banned words:
 ${bannedWords.map(w => `- ${w}`).join("\n") || "- None"}
 `;
-
-    // ✅ Generate AI response
-    const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY
+// ✅ Generate AI response
+const ai = new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY,
 });
 
 const response = await ai.models.generateContent({
   model: "gemini-2.5-flash",
-  contents: systemPrompt
+  contents: systemPrompt,
 });
 
-const reply = response.text.trim();
+const reply = response.text?.trim();
 
-    if (!reply) {
-      return res.status(500).json({ error: "AI failed to generate reply" });
-    }
+if (!reply) {
+  return res.status(500).json({ error: "AI failed to generate reply" });
+}
 
-    // ✅ Save post
-    const { data: post, error: postError } = await supabaseAdmin
-      .from("posts")
-      .insert({
-        user_id: userId,
-        content: reply
-      })
-      .select()
-      .single();
+// ✅ Save post
+const { data: post, error: postError } = await supabaseAdmin
+  .from("posts")
+  .insert({
+    user_id: userId,
+    content: reply,
+  })
+  .select()
+  .single();
 
-    if (postError) throw postError;
+if (postError) throw postError;
 
-    // ✅ Summarize memory
-const textSummary = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY
+// ✅ Summarize memory
+const aiSummary = new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY,
 });
 
-const summaryResponse =
-  await textSummary.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: `Summarize this into short memory:\n${reply}`,
+const summaryResponse = await aiSummary.models.generateContent({
+  model: "gemini-2.5-flash",
+  contents: `Summarize this into short memory:\n${reply}`,
+});
+
+const memorySummary = summaryResponse.text?.trim();
+
+// ✅ Save memory (only if exists)
+if (memorySummary) {
+  await supabaseAdmin.from("memorySummaries").insert({
+    user_id: userId,
+    post_id: post.id,
+    summary: memorySummary, // ✅ FIXED HERE
   });
+}
 
-const memorySummary = summaryResponse.text.trim();
-
-    // ✅ Save memory (only if exists)
-    if (memorySummary) {
-      await supabaseAdmin.from("memorySummaries").insert({
-        user_id: userId,
-        post_id: post.id,
-        summary: textSummary
-      });
-    }
-
-    // ✅ Final response
-    return res.status(201).json({
-      reply,
-      post,
-      memorySummary
-    });
+// ✅ Final response
+return res.status(201).json({
+  reply,
+  post,
+  memorySummary,
+});
 
   } catch (err) {
     console.error("AI chat error:", err);
