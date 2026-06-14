@@ -4,7 +4,7 @@ const fetch = require("node-fetch");
 const crypto = require("crypto");
 const dotenv = require("dotenv");
 const { createClient } = require("@supabase/supabase-js");
-const OpenAI = require("openai");
+const { GoogleGenAI } = require( "@google/genai");
 
 dotenv.config();
 
@@ -19,10 +19,7 @@ const supabase = createClient(
 );
 const supabaseAdmin = supabase; // ✅ Admin client
 
-// OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_key
-});
+
 
 app.post(
   "/paystack/webhook",
@@ -352,16 +349,16 @@ ${bannedWords.map(w => `- ${w}`).join("\n") || "- None"}
 `;
 
     // ✅ Generate AI response
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: message }
-      ]
-    });
+    const ai = new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY
+});
 
-    const reply =
-      completion?.choices?.[0]?.message?.content?.trim() || "";
+const response = await ai.models.generateContent({
+  model: "gemini-2.5-flash",
+  contents: systemPrompt
+});
+
+const reply = response.text.trim();
 
     if (!reply) {
       return res.status(500).json({ error: "AI failed to generate reply" });
@@ -380,26 +377,24 @@ ${bannedWords.map(w => `- ${w}`).join("\n") || "- None"}
     if (postError) throw postError;
 
     // ✅ Summarize memory
-    const summaryCompletion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 0,
-      messages: [
-        {
-          role: "user",
-          content: `Summarize this into short memory:\n${reply}`
-        }
-      ]
-    });
+const textSummary = new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY
+});
 
-    const memorySummary =
-      summaryCompletion?.choices?.[0]?.message?.content?.trim() || "";
+const summaryResponse =
+  await textSummary.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: `Summarize this into short memory:\n${reply}`,
+  });
+
+const memorySummary = summaryResponse.text.trim();
 
     // ✅ Save memory (only if exists)
     if (memorySummary) {
       await supabaseAdmin.from("memorySummaries").insert({
         user_id: userId,
         post_id: post.id,
-        summary: memorySummary
+        summary: text9Summary
       });
     }
 
