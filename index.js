@@ -364,7 +364,7 @@ ${bannedWords.map(w => `- ${w}`).join("\n") || "- None"}
  
   const completion = await client.chat.completions.create({
   model: "nvidia/ising-calibration-1.5-31b",
-  message:[{ role:"system",
+  messages:[{ role:"system",
              content:systemPrompt  }],
   temperature: 1,
   top_p: 0.95,
