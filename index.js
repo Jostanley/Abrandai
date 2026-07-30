@@ -368,10 +368,6 @@ const completion = await openai.chat.completions.create({
       role: "system",
       content: systemPrompt,
     },
-    {
-      role: "user",
-      content: message,
-    },
   ],
   temperature: 1,
   top_p: 0.95,
