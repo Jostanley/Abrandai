@@ -4,8 +4,7 @@ const fetch = require("node-fetch");
 const crypto = require("crypto");
 const dotenv = require("dotenv");
 const { createClient } = require("@supabase/supabase-js");
-const { GoogleGenAI } = require( "@google/genai");
-
+const OpenAI = require("openai");
 dotenv.config();
 
 const app = express();
@@ -19,7 +18,10 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 const supabaseAdmin = supabase; // ✅ Admin client
-
+const openai = new OpenAI({
+  apiKey: process.env.NVIDIA_API_KEY,
+  baseURL: 'https://integrate.api.nvidia.com/v1',
+})
 
 
 app.post(
@@ -77,22 +79,32 @@ app.post(
           return res.sendStatus(404);
         }
 
-      const sub = await supabaseAdmin
-          .from("subscriptions")
-          .insert({
-            user_id:user.id,
-            subscribed: true,
-            plan: "pro",
-            email:email,
-            subscription_status: "active",
-            subscription_code: reference,
-            paystack_customer_code: customer.customer_code,
-            subscribed_at: timeStamp,
-          })
-          .eq("id", user.id)
-          .select()
-          .single()
-
+      const { data: sub, error: subError } = await supabaseAdmin
+  .from("subscriptions")
+  .insert({
+    user_id: user.id,
+    subscribed: true,
+    plan: "pro",
+    email,
+    subscription_status: "active",
+    subscription_code,
+    paystack_customer_code: customer.customer_code,
+    subscribed_at: timeStamp,
+  })
+  .select()
+  .single();
+  
+ //insert in user table
+ await supabaseAdmin
+  .from("users")
+  .update({
+    subscribed: true,
+    subscription_status: "active",
+    subscription_code,
+    paystack_customer_code: customer.customer_code,
+  })
+  .eq("id", user.id);
+ 
       const pay =  await supabaseAdmin
           .from("payments")
           .insert({
@@ -316,7 +328,7 @@ app.post("/ai/chat", verifySupabaseToken, async (req, res) => {
 
     // ✅ Fetch memory
     const { data: memories, error: memoryError } = await supabaseAdmin
-      .from("memorysummaries")
+      .from("memorySummaries")
       .select("summary")
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
@@ -349,17 +361,25 @@ Never use banned words:
 ${bannedWords.map(w => `- ${w}`).join("\n") || "- None"}
 `;
 // ✅ Generate AI response
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
+const completion = await openai.chat.completions.create({
+  model: "deepseek-ai/deepseek-v4-flash",
+  messages: [
+    {
+      role: "system",
+      content: systemPrompt,
+    },
+    {
+      role: "user",
+      content: message,
+    },
+  ],
+  temperature: 1,
+  top_p: 0.95,
+  max_tokens: 4096,
 });
 
-const response = await ai.models.generateContent({
-  model: "gemini-2.5-flash",
-  contents: systemPrompt + "\n\nUSER REQUEST:\n" + message,
-});
-
-const reply = response.text?.trim();
-
+const reply = completion.choices[0].message.content.trim();
+  
 if (!reply) {
   return res.status(500).json({ error: "AI failed to generate reply" });
 }
@@ -377,16 +397,22 @@ const { data: post, error: postError } = await supabaseAdmin
 if (postError) throw postError;
 
 // ✅ Summarize memory
-const aiSummary = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
+const summaryCompletion = await openai.chat.completions.create({
+  model: "deepseek-ai/deepseek-v4-flash",
+  messages: [
+    {
+      role: "system",
+      content: "Summarize this post into one short memory sentence.",
+    },
+    {
+      role: "user",
+      content: reply,
+    },
+  ],
 });
-
-const summaryResponse = await aiSummary.models.generateContent({
-  model: "gemini-2.5-flash",
-  contents: `Summarize this into short memory:\n${reply}`,
-});
-
-const memorySummary = summaryResponse.text?.trim();
+  
+const memorySummary =
+summaryCompletion.choices[0].message.content.trim();
 
 // ✅ Save memory (only if exists)
 if (memorySummary) {
