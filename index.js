@@ -1,18 +1,24 @@
 const express = require("express");
 const cors = require("cors");
+const helmet = require("helmet");
 const fetch = require("node-fetch");
-const crypto = require("crypto");
+const crypto = require("crypto"); // Node.js built-in
 const dotenv = require("dotenv");
 const { createClient } = require("@supabase/supabase-js");
 const OpenAI = require("openai");
 dotenv.config();
 
 const app = express();
-app.use(cors())
-/*app.use(cors({
-  origin:"https://abrand-a5a8.onrender.com",
-  credentials:true,
-})); */
+
+// Security headers
+app.use(helmet());
+
+// Restrict CORS to trusted origin(s) from env; falls back to no wildcard
+const allowedOrigin = process.env.ALLOWED_ORIGIN;
+app.use(cors({
+  origin: allowedOrigin || false,
+  credentials: true,
+}));
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -429,7 +435,6 @@ return res.status(201).json({
 
     return res.status(500).json({
       error: "Something went wrong",
-      details: err.message
     });
   }
 });
@@ -437,7 +442,7 @@ return res.status(201).json({
 // ========================
 // Verify payment
 // ========================
-app.post("/verify-payment", async (req, res) => {
+app.post("/verify-payment", verifySupabaseToken, async (req, res) => {
   const { reference } = req.body;
   if (!reference) return res.status(400).json({ error: "Transaction reference required" });
  console.log("transaction reference")
