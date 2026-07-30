@@ -400,7 +400,7 @@ const summary = await client.chat.completions.create({
     },
     {
       role: "user",
-      content: conversation,
+      content: reply,
     },
   ],
   temperature: 0.3,
