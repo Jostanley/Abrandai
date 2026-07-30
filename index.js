@@ -328,7 +328,7 @@ app.post("/ai/chat", verifySupabaseToken, async (req, res) => {
 
     // ✅ Fetch memory
     const { data: memories, error: memoryError } = await supabaseAdmin
-      .from("memorySummaries")
+      .from("memorysummaries")
       .select("summary")
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
@@ -416,7 +416,7 @@ summaryCompletion.choices[0].message.content.trim();
 
 // ✅ Save memory (only if exists)
 if (memorySummary) {
-  await supabaseAdmin.from("memorySummaries").insert({
+  await supabaseAdmin.from("memorysummaries").insert({
     user_id: userId,
     post_id: post.id,
     summary: memorySummary, // ✅ FIXED HERE
