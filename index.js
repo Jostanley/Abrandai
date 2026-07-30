@@ -361,25 +361,16 @@ Never use banned words:
 ${bannedWords.map(w => `- ${w}`).join("\n") || "- None"}
 `;
 // ✅ Generate AI response
-const completion = await openai.chat.completions.create({
-  model: "deepseek-ai/deepseek-v4-flash",
-  messages: [
-    {
-      role: "system",
-      content: systemPrompt,
-    },
-        {
-      role: "user",
-      content: systemPrompt,
-    },
-  ],
+ 
+  const completion = await client.chat.completions.create({
+  model: "nvidia/ising-calibration-1.5-31b",
+  systemPrompt,
   temperature: 1,
   top_p: 0.95,
-  max_tokens: 4096,
+  max_tokens: 32768,
 });
 
-const reply = completion.choices[0].message.content.trim();
-  
+const reply = completion.choices[0].message.content;
 if (!reply) {
   return res.status(500).json({ error: "AI failed to generate reply" });
 }
@@ -397,23 +388,25 @@ const { data: post, error: postError } = await supabaseAdmin
 if (postError) throw postError;
 
 // ✅ Summarize memory
-const summaryCompletion = await openai.chat.completions.create({
-  model: "deepseek-ai/deepseek-v4-flash",
+
+const summary = await client.chat.completions.create({
+  model: "nvidia/ising-calibration-1.5-31b",
   messages: [
     {
       role: "system",
-      content: "Summarize this post into one short memory sentence.",
+      content:
+        "Summarize this conversation into concise, long-term memory. Include user preferences, goals, important facts, and ongoing tasks. Do not include temporary details.",
     },
     {
       role: "user",
-      content: reply,
+      content: conversation,
     },
   ],
+  temperature: 0.3,
+  max_tokens: 500,
 });
-  
-const memorySummary =
-summaryCompletion.choices[0].message.content.trim();
 
+const memorySummary = summary.choices[0].message.content;
 // ✅ Save memory (only if exists)
 if (memorySummary) {
   await supabaseAdmin.from("memorysummaries").insert({
