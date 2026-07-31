@@ -397,7 +397,7 @@ if (postError) throw postError;
 // ✅ Summarize memory
 completion = await client.chat.completions.create(
   model="thinkingmachines/inkling",
-  messages=: [
+  messages=[
     {
       role: "system",
       content:
