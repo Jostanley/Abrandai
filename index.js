@@ -299,7 +299,10 @@ app.post("/ai/chat", verifySupabaseToken, async (req, res) => {
   try {
     // ✅ Always trust token, not frontend
     const userId = req.user.id;
-    const { message } = req.body;
+    const { message,prompt_niche,
+    prompt_tone,
+    prompt_beliefs,
+    prompt_bannedWords } = req.body;
 
     if (!message?.trim()) {
       return res.status(400).json({ error: "Message is required" });
@@ -325,13 +328,13 @@ app.post("/ai/chat", verifySupabaseToken, async (req, res) => {
     } = branddata;
 
     // ✅ Fetch offers
-    const { data: offers, error: offersError } = await supabaseAdmin
+    /*const { data: offers, error: offersError } = await supabaseAdmin
       .from("offers")
       .select("*")
       .eq("user_id", userId);
 
     if (offersError) throw offersError;
-
+*/
     // ✅ Fetch memory
     const { data: memories, error: memoryError } = await supabaseAdmin
       .from("memorysummaries")
@@ -347,24 +350,24 @@ app.post("/ai/chat", verifySupabaseToken, async (req, res) => {
 You are an AI assistant representing this brand.
 
 BRAND:
-- Name: ${name}
-- Tone: ${tone}
+- Name: ${prompt_niche}
+- Tone: ${prompt_tone}
 
 BELIEFS:
-${beliefs.map(b => `- ${b}`).join("\n") || "- None"}
-
+${prompt_beliefs}
+/*
 AUDIENCE:
-- Target: ${targetAudience}
+- Target:${" None"}
 
 OFFERS:
 ${(offers || []).map(o => `- ${o.title}: ${o.description}`).join("\n") || "- None"}
-
+*/
 MEMORY:
 ${(memories || []).map(m => `- ${m.summary}`).join("\n") || "- None"}
 
 RULES:
 Never use banned words:
-${bannedWords.map(w => `- ${w}`).join("\n") || "- None"}
+${prompt_bannedWords}
 `;
 
 const prompt = `
@@ -377,13 +380,13 @@ ${message}
 const completion = await client.chat.completions.create({
   model: "thinkingmachines/inkling",
   messages: [
-    {
+   /* {
       role: "user",
       content: systemPrompt,
-    },
+    },*/
     {
       role: "user",
-      content:message,
+      content:prompt,
     }
   ],
   temperature: 1,
