@@ -366,18 +366,21 @@ RULES:
 Never use banned words:
 ${bannedWords.map(w => `- ${w}`).join("\n") || "- None"}
 `;
+
+const prompt = `
+${systemPrompt}
+
+USER REQUEST:
+${message}
+`;
 // ✅ Generate AI response
 const completion = await client.chat.completions.create({
   model: "thinkingmachines/inkling",
   messages: [
     {
       role: "user",
-      content: systemPrompt,
+      content: prompt,
     },
-    {
-    role: "user",
-    content: message,
-  },
   ],
   temperature: 1,
   top_p: 0.95,
