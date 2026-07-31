@@ -378,7 +378,7 @@ const completion = await client.chat.completions.create({
   model: "thinkingmachines/inkling",
   messages: [
     {
-      role: "system",
+      role: "user",
       content: systemPrompt,
     },
     {
