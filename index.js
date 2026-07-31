@@ -378,9 +378,13 @@ const completion = await client.chat.completions.create({
   model: "thinkingmachines/inkling",
   messages: [
     {
-      role: "user",
-      content: prompt,
+      role: "system",
+      content: systemPrompt,
     },
+    {
+      role: "user",
+      content:prompt,
+    }
   ],
   temperature: 1,
   top_p: 0.95,
@@ -412,11 +416,7 @@ const summary = await client.chat.completions.create({
     {
       role: "system",
       content:
-        "Summarize this conversation into concise, long-term memory. Include user preferences, goals, important facts, and ongoing tasks. Do not include temporary details.",
-    },
-    {
-      role: "user",
-      content: reply,
+        `Summarize ${reply} conversation into concise, long-term memory. Include user preferences, goals, important facts, and ongoing tasks. Do not include temporary details.`,
     },
    ],
   temperature: 1,
