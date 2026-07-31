@@ -374,7 +374,7 @@ completion = await client.chat.completions.create(
   temperature=1,
   top_p=0.95,
   max_tokens=8192,
- stream=False
+ stream=false
 )
 
 const reply = completion.choices[0].message.content;
@@ -411,7 +411,7 @@ completion = await client.chat.completions.create(
   temperature=1,
   top_p=0.95,
   max_tokens=8192,
- stream=False
+ stream=false
 )
 const memorySummary = summary.choices[0].message.content;
 // ✅ Save memory (only if exists)
