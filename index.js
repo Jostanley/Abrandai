@@ -399,7 +399,7 @@ const { data: post, error: postError } = await supabaseAdmin
 if (postError) throw postError;
 
 // ✅ Summarize memory
-const completion = await client.chat.completions.create({
+const summary = await client.chat.completions.create({
   model: "thinkingmachines/inkling",
   messages=[
     {
