@@ -367,15 +367,19 @@ Never use banned words:
 ${bannedWords.map(w => `- ${w}`).join("\n") || "- None"}
 `;
 // ✅ Generate AI response
- 
-completion = await client.chat.completions.create(
-  model="thinkingmachines/inkling",
-  messages=[{"role":"user","content": systemPrompt}],
-  temperature=1,
-  top_p=0.95,
-  max_tokens=8192,
- stream=false
-)
+const completion = await client.chat.completions.create({
+  model: "thinkingmachines/inkling",
+  messages: [
+    {
+      role: "user",
+      content: systemPrompt,
+    },
+  ],
+  temperature: 1,
+  top_p: 0.95,
+  max_tokens: 8192,
+  stream: false,
+});
 
 const reply = completion.choices[0].message.content;
 if (!reply) {
@@ -395,8 +399,8 @@ const { data: post, error: postError } = await supabaseAdmin
 if (postError) throw postError;
 
 // ✅ Summarize memory
-completion = await client.chat.completions.create(
-  model="thinkingmachines/inkling",
+const completion = await client.chat.completions.create({
+  model: "thinkingmachines/inkling",
   messages=[
     {
       role: "system",
@@ -408,11 +412,11 @@ completion = await client.chat.completions.create(
       content: reply,
     },
    ],
-  temperature=1,
-  top_p=0.95,
-  max_tokens=8192,
- stream=false
-)
+  temperature: 1,
+  top_p: 0.95,
+  max_tokens: 8192,
+  stream: false,
+});
 const memorySummary = summary.choices[0].message.content;
 // ✅ Save memory (only if exists)
 if (memorySummary) {
