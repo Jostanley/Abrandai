@@ -355,13 +355,7 @@ BRAND:
 
 BELIEFS:
 ${prompt_beliefs}
-/*
-AUDIENCE:
-- Target:${" None"}
 
-OFFERS:
-${(offers || []).map(o => `- ${o.title}: ${o.description}`).join("\n") || "- None"}
-*/
 MEMORY:
 ${(memories || []).map(m => `- ${m.summary}`).join("\n") || "- None"}
 
