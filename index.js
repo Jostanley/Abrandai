@@ -401,7 +401,7 @@ if (postError) throw postError;
 // ✅ Summarize memory
 const summary = await client.chat.completions.create({
   model: "thinkingmachines/inkling",
-  messages=[
+  messages:[
     {
       role: "system",
       content:
