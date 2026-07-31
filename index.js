@@ -368,14 +368,14 @@ ${bannedWords.map(w => `- ${w}`).join("\n") || "- None"}
 `;
 // ✅ Generate AI response
  
-  const completion = await client.chat.completions.create({
-  model: "nvidia/ising-calibration-1.5-31b",
-  messages:[{ role:"system",
-             content:systemPrompt  }],
-  temperature: 1,
-  top_p: 0.95,
-  max_tokens: 32768,
-});
+completion = await client.chat.completions.create(
+  model="thinkingmachines/inkling",
+  messages=[{"role":"user","content": systemPrompt}],
+  temperature=1,
+  top_p=0.95,
+  max_tokens=8192,
+ stream=False
+)
 
 const reply = completion.choices[0].message.content;
 if (!reply) {
@@ -395,10 +395,9 @@ const { data: post, error: postError } = await supabaseAdmin
 if (postError) throw postError;
 
 // ✅ Summarize memory
-
-const summary = await client.chat.completions.create({
-  model: "nvidia/ising-calibration-1.5-31b",
-  messages: [
+completion = await client.chat.completions.create(
+  model="thinkingmachines/inkling",
+  messages=: [
     {
       role: "system",
       content:
@@ -408,11 +407,12 @@ const summary = await client.chat.completions.create({
       role: "user",
       content: reply,
     },
-  ],
-  temperature: 0.3,
-  max_tokens: 500,
-});
-
+   ],
+  temperature=1,
+  top_p=0.95,
+  max_tokens=8192,
+ stream=False
+)
 const memorySummary = summary.choices[0].message.content;
 // ✅ Save memory (only if exists)
 if (memorySummary) {
