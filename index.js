@@ -14,7 +14,7 @@ const app = express();
 app.use(helmet());
 
 // Restrict CORS to trusted origin(s) from env; falls back to no wildcard
-const allowedOrigin = process.env.ALLOWED_ORIGIN;
+const allowedOrigin = process.env.FRONTEND_URL;
 app.use(cors({
   origin: allowedOrigin || false,
   credentials: true,
