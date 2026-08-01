@@ -382,7 +382,7 @@ const completion = await client.chat.completions.create({
     },*/
     {
       role: "user",
-      content:prompt,
+      content:message,
     }
   ],
   temperature: 1,
