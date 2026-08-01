@@ -443,7 +443,7 @@ Every response should:
 4. Focus on helping the user achieve their goal.
 `; 
 console.log(systemPrompt)
-
+console.log(req.body)
 // ✅ Generate AI response
 const completion = await client.chat.completions.create({
   model: "thinkingmachines/inkling",
