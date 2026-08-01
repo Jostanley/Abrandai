@@ -370,6 +370,8 @@ ${systemPrompt}
 USER REQUEST:
 ${message}
 `;
+console.log(systemPrompt)
+console.log(prompt)
 // ✅ Generate AI response
 const completion = await client.chat.completions.create({
   model: "thinkingmachines/inkling",
